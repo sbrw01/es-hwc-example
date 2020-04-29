@@ -1,0 +1,2 @@
+
+Deploys a elasticsearch hot warm cold cluster on an already running kubernetes cluster on GCP for testing.

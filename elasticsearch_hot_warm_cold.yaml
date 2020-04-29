@@ -1,0 +1,162 @@
+apiVersion: elasticsearch.k8s.elastic.co/v1beta1
+kind: Elasticsearch
+metadata:
+  name: logging
+spec:
+  version: 7.3.0
+  nodes:
+
+ # Master nodes
+  - nodeCount: 1
+    podDisruptionBudget: {}
+    spec:
+      initContainers:
+        - name: install-plugins
+          command:
+          - sh
+          - -c
+          - |
+            bin/elasticsearch-plugin install --batch repository-gcs
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          elasticsearch.k8s.elastic.co/cluster-name: logging
+    config:
+      node.master: true
+      node.data: false
+      node.ingest: false
+      node.ml: false
+      xpack.ml.enabled: false
+      cluster.remote.connect: false
+    podTemplate:
+      metadata:
+        labels:
+          nodesGroup: master
+      spec:
+        containers:
+        - name: elasticsearch
+          env:
+          - name: ES_JAVA_OPTS
+            value: -Xms2g -Xmx2g
+          resources:
+            limits:
+              memory: 4Gi
+              cpu: 1    
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                      elasticsearch.k8s.elastic.co/cluster-name: logging
+                topologyKey: kubernetes.io/hostname
+  
+  
+  # Hot nodes, with high CPU and fast IO
+  - nodeCount: 2
+    podDisruptionBudget: {}
+    config:
+      node.attr.data: hot
+      node.master:  false
+      node.data: true
+      node.ingest: true
+      node.ml: true
+    podTemplate:
+      metadata:
+        labels:
+          nodesGroup: hot
+      spec:
+        containers:
+        - name: elasticsearch
+          env:
+          - name: ES_JAVA_OPTS
+            value: -Xms4g -Xmx4g
+          resources:
+            limits:
+              memory: 8Gi
+              cpu: 2        
+        affinity: {}
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Ti
+        storageClassName: ssd
+  
+  
+  
+  # Warm Nodes, with high storage
+  - nodeCount: 1
+    podDisruptionBudget: {}
+    config:
+      node.attr.data: warm
+      node.master:  false
+      node.data: true
+      node.ingest: true
+      node.ml: true
+    podTemplate:
+      metadata:
+        labels:
+          nodesGroup: warm
+      spec:
+        containers:
+        - name: elasticsearch
+          env:
+          - name: ES_JAVA_OPTS
+            value: -Xms4g -Xmx4g
+          resources:
+            limits:
+              memory: 8Gi  
+              cpu: 1        
+        affinity: {}
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Ti
+        storageClassName: standard
+
+
+  #  Cold Nodes, with higher storage
+  - nodeCount: 1
+    podDisruptionBudget: {}
+    config:
+      node.attr.data: cold
+      node.master:  false
+      node.data: true
+      node.ingest: true
+      node.ml: false
+    podTemplate:
+      metadata:
+        labels:
+          nodesGroup: cold
+      spec:
+        containers:
+        - name: elasticsearch
+          env:
+          - name: ES_JAVA_OPTS
+            value: -Xms2g -Xmx2g
+          resources:
+            limits:
+              memory: 4Gi
+              cpu: 1 
+        affinity: {}
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 50Ti
+        storageClassName: standard 
